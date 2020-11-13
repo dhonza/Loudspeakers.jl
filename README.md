@@ -1,2 +1,2 @@
 # Loudspeakers.jl
-Loudspeaker measurements, analysis and design
+Loudspeaker measurement, analysis and design.
