@@ -1,6 +1,17 @@
-export expsweep
+export ExpSweep, expsweep, analyze
 
-# BASED ON: https://github.com/ssfrr/MeasureIR.jl/blob/master/src/expsweep.jl
+# ALMOST COPY OF: https://github.com/ssfrr/MeasureIR.jl/blob/master/src/expsweep.jl
+
+struct ExpSweep{AT, SR}
+    sig::AT
+    w1::Float64
+    w2::Float64
+    gain::Float64
+    samplerate::SR
+end
+
+# the default constructor doesn't auto-convert the non-parametric arguments
+ExpSweep(sig::T, w1, w2, g, sr::SR) where {T, SR} = ExpSweep{T, SR}(sig, w1, w2, g, sr)
 
 """
     expsweep(length; options...)
@@ -84,7 +95,7 @@ function expsweep(length;
     winout = 0.5 .- 0.5*cos.(range(π, 0; length=f2))
     sig[1:f1] .*= winin
     sig[(end-f2+1):end] .*= winout
-    (sig=sig, w1=w1, w2=w2, gain=gain, samplerate=samplerate)
+    ExpSweep(sig, w1, w2, gain, samplerate)
 end
 
 function _expsweep(func, L, minfreq, maxfreq)
@@ -113,4 +124,82 @@ function _optimizew1(w1, w2, L)
     fnew = find_zero(a, f1)
 
     fnew/L
+end
+
+"""
+    function analyze(m::ExpSweep, response::AbstractArray; noncausal=false)
+When the measurement is a sweep, you can pass the `noncausal=true` keyword
+argument to include the noncausal part of the impulse response, which carries
+energy from nonlinear distortion in the system. In this case the zero-lag part
+of the impulse response starts at index `L÷2+1`, where `L` is the length of the
+IR.
+"""
+function analyze(m::ExpSweep, response::AbstractArray; noncausal=false)
+    # we don't truncate the response here because typically sweep measurements
+    # are taken without repeating, so there's no real errors we'd catch by
+    # truncating.
+    T = length(m.sig)
+    w1 = m.w1
+    w2 = m.w2
+    t = 0:(T-1)
+    # compute the normalizing factor from the derivative of the frequency -
+    # the faster the frequency is changing the less time the signal spends
+    # at that frequency so we need to boost the amplitude to compensate
+    amp = @. w1/T*log(w2/w1)*exp(t/T*log(w2/w1))
+    invfilt = amp .* m.sig
+    # calculate an extra scaling factor to get the center of the passband to
+    # unity. At some point it might make sense to look at a range instead of
+    # just the center frequency, in case we catch it in the middle of some
+    # ripple. Generally things should be pretty flat if there's a fade in/out
+    # TODO: seems kinda silly to compute the whole FFT just to look at the
+    # center frequency. We could just do the dot product of that freq
+    roundtrip = xcorr(m.sig * m.gain, invfilt; padmode=:longest)
+    centeridx = round(Int, (w1 + (w2-w1)/2)/π*(length(roundtrip)/2))
+    scale = abs(rfft(roundtrip)[centeridx])
+
+    ir = mapslices(response, dims=1) do v
+        xcorr(v, invfilt, padmode=:longest) ./ scale
+    end
+
+    # keep the full IR (including non-causal parts representing nonlinearities)
+    # if m.nonlinear is true
+    zeroidx = size(ir,1)÷2+1
+    if noncausal
+        SampleArray(reshape(ir[zeroidx-T:zeroidx+T], :, 1), m.samplerate)
+    else
+        # nonlinearity detection is not working right now, but it seems like a
+        # useful feature to add in the future. One issue is that we need a way
+        # to estimate the expected "noise floor" of the noncausal part of the
+        # IR, which is _not_ the same as the noise floor of the response. It
+        # definitely helps to deconvolve just the silence part and use that to
+        # estimate the IR noise floor. The other issue is that the overall
+        # energy in the noncausal part just doesn't change that much, because
+        # all the extra energy is pretty concentrated and it gets averaged out.
+        # probably to get this to work well we either need to explicitly look
+        # for peaks, and possibly look at fixed delays from the main peak that
+        # correspond to harmonics.
+        # deconvsilence = mapslices(resp, 1) do v
+        #     xcorr(v[1:prepadding(m)], invfilt)
+        # end
+        # nf = noisefloor(m, deconvsilence)
+
+        # we don't check all the way up to the center because if the impulse is
+        # bandlimited it'll have energy directly preceeding it. In reality
+        # how far back we should go depends on the bandwidth of the response,
+        # so this number may need to be tuned.
+        # fortunately this is only to heuristically decide whether we print a
+        # warning, so we're never going to get to 100% accuracy anyways...
+        # preimpulse = 100
+        # noncausalpower = sum(ir[zeroidx-T:zeroidx-preimpulse].^2) /
+        #                  (2T+1-preimpulse)
+        # if any(noncausalpower .> nf .* 1.1 .+ sqrt(eps()))
+        #     @warn "Energy in noncausal IR is above noise floor. Check for nonlinearity"
+        # end
+        SampleArray(reshape(ir[zeroidx:zeroidx+T-1], :, 1), m.samplerate)
+    end
+end
+
+function analyze(m::ExpSweep, response::SampleArray; kwargs...)
+    @assert nchannels(response) == 1
+    analyze(m, data(response)[:]; kwargs...) 
 end

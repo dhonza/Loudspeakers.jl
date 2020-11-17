@@ -1,7 +1,8 @@
 export miccalibrate, miccalibrate!, load_directivity_spectra
 
 function miccalibrate!(a::AbstractSpectrumArray, calfile; skipto=0)
-    df = CSV.read(calfile; header=false, skipto=skipto)
+    # df = CSV.read(calfile, DataFrame; header=false, skipto=skipto)
+    df = CSV.read(calfile, DataFrame; header=false)
     freqs, magdb = df.Column1, df.Column2
     mag = LinearInterpolation(freqs, db2amp.(magdb); extrapolation_bc = Flat())(domain(a))
     a ./ Complex.(mag)
@@ -12,30 +13,28 @@ miccalibrate(a::AbstractSpectrumArray, calfile; skipto=0) = miccalibrate!(deepco
 """
     load_directivity_spectra(rootdir, dirtemplate, loader, select=:all)
 
-Load all directivity spectra in `rootdir` with each spectrum in a separate subdirectory matching regex `dirtemplate`. 
+Load all directivity spectra in `irdir` with each spectrum in a separate IR file/directory matching regex `ir_template`. 
 
-Use `loader(dir)` function to get the `SampleArray`. Imported spectra can be limited to only `:positive` or `:negative` angles using `select`. 
-Degrees are infered as to be the first group of `dirtemplate`. Example: `r"LEFT_SPEAKER_(\\d\\d\\d)_RATE48000"`.
+Use `loader(f)` function to get the `SampleArray`. Imported spectra can be limited to only `:positive` or `:negative` angles using `select`. 
+Degrees are infered as to be the first group of `ir_template`. Example: `r"ir_(\\d\\d\\d).wav"`.
 """
-function load_directivity_spectra(rootdir, dirtemplate, loader, select=:all)
+function load_directivity_spectra(irdir, ir_template, loader, select=:all)
     @assert select ∈ [:all, :positive, :negative]
     spectra = []
     angles = Float64[]
-    for f in readdir(rootdir)
-        fpath = joinpath(rootdir, f)
-        if isdir(fpath)
-            m = match(dirtemplate, f)
-            if !isnothing(m)
-                angle = normdeg(parse(Float64, m.captures[1]))
-                if select == :positive && angle < 0
-                    continue
-                end
-                if select == :negative && angle > 0
-                    continue
-                end
-                push!(spectra, loader(fpath))
-                push!(angles, angle)
+    for f in readdir(irdir)
+        fpath = joinpath(irdir, f)
+        m = match(ir_template, f)
+        if !isnothing(m)
+            angle = normdeg(parse(Float64, m.captures[1]))
+            if select == :positive && angle < 0
+                continue
             end
+            if select == :negative && angle > 0
+                continue
+            end
+            push!(spectra, loader(fpath))
+            push!(angles, angle)
         end
     end
     DirectivitySpectra(hcat(spectra...), angles)

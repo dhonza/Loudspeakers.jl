@@ -21,7 +21,7 @@ end
 @recipe function f(X::AbstractSpectrumArray, ytype = :magdb; smoothing = nothing)
     xscale --> :log10
     xlims --> (1, Inf)
-    xlabel --> "Hz"
+    xguide --> "Hz"
     size --> (1000, 500)
     xformatter --> audiofreqlogtickformatter
     grid --> true
@@ -42,22 +42,22 @@ end
     if ytype == :raw
         b = arr
     elseif ytype == :magdb
-        ylabel --> "magnitude (dB)"
+        yguide --> "magnitude (dB)"
         b = amp2db.(abs.(arr))
     elseif ytype == :mag
-        ylabel --> "magnitude"
+        yguide --> "magnitude"
         b = abs.(arr)
     elseif ytype == :phase
-        ylabel --> "deg"
+        yguide --> "deg"
         b = rad2deg.(angle.(arr))
     elseif ytype == :uphase # unwrapped
-        ylabel --> "deg (unwrapped)"
+        yguide --> "deg (unwrapped)"
         b = rad2deg.(unwrap(angle.(arr); dims=1))
     elseif ytype == :re
-        ylabel --> "Re"
+        yguide --> "Re"
         b = real.(arr)
     elseif ytype == :im
-        ylabel --> "Im"
+        yguide --> "Im"
         b = imag.(arr)
     else
         throw(ArgumentError("unknown ytype = $ytype, use one of :raw, :mag, :magdb, :phase, :uphase, :re, :im"))

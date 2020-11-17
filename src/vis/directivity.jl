@@ -27,8 +27,8 @@
 
     @series begin
         seriestype := :hline
-        color := :black
-        alpha := 0.3
+        seriescolor := :black
+        seriesalpha := 0.3
         label := ""
         [-90, 0, 90]
     end
@@ -64,7 +64,7 @@ end
         push!(anglesrad, anglesrad[1])
         push!(freqamps, freqamps[1])
         @series begin
-            proj := :polar
+            projection := :polar
             label := "$f"
             anglesrad, freqamps
         end

@@ -5,6 +5,7 @@ export normdeg, deltadeg
 export create_fir_filter, resamplefreq, zerophase
 
 import Base: show, lpad, rpad, getindex, length, lastindex
+using DataFrames
 using Statistics
 import Statistics: mean
 using StatsBase
