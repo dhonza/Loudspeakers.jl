@@ -1,4 +1,4 @@
-export miccalibrate, miccalibrate!, load_directivity_spectra
+export miccalibrate, miccalibrate!, load_angular_measurements
 
 function miccalibrate!(a::AbstractSpectrumArray, calfile; skipto=0)
     # df = CSV.read(calfile, DataFrame; header=false, skipto=skipto)
@@ -15,10 +15,10 @@ miccalibrate(a::AbstractSpectrumArray, calfile; skipto=0) = miccalibrate!(deepco
 
 Load all directivity spectra in `irdir` with each spectrum in a separate IR file/directory matching regex `ir_template`. 
 
-Use `loader(f)` function to get the `SampleArray`. Imported spectra can be limited to only `:positive` or `:negative` angles using `select`. 
+Use `loader(f)` function to get the a subtype of the `AbstractSpectrumArray`. Imported spectra can be limited to only `:positive` or `:negative` angles using `select`. 
 Degrees are infered as to be the first group of `ir_template`. Example: `r"ir_(\\d\\d\\d).wav"`.
 """
-function load_directivity_spectra(irdir, ir_template, loader, select=:all)
+function load_angular_measurements(irdir, ir_template, loader, select=:all)
     @assert select ∈ [:all, :positive, :negative]
     spectra = []
     angles = Float64[]
@@ -33,9 +33,13 @@ function load_directivity_spectra(irdir, ir_template, loader, select=:all)
             if select == :negative && angle > 0
                 continue
             end
-            push!(spectra, loader(fpath))
+            spectrum = loader(fpath)
+            names!(spectrum, [Symbol(round(angle) ≈ angle ? round(Int, angle) : angle)])
+            push!(spectra, spectrum)
             push!(angles, angle)
         end
     end
-    DirectivitySpectra(hcat(spectra...), angles)
+    length(spectra) > 0 || error("now file imported!")
+    catspectra = hcat(spectra...)
+    AngularMeasurements(catspectra, angles)
 end

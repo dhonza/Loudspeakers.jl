@@ -26,6 +26,7 @@ end
     xformatter --> audiofreqlogtickformatter
     grid --> true
     xticks --> audiofreqlogticks()
+    label --> reshape(replace.(String.(names(X)), "_" => " "), 1, :)
 
     if !isnothing(smoothing)
         X = smooth(X, smoothing)
@@ -47,6 +48,9 @@ end
     elseif ytype == :mag
         yguide --> "magnitude"
         b = abs.(arr)
+    elseif ytype == :powdb
+        yguide --> "power (dB)"
+        b = pow2db.(abs.(arr))
     elseif ytype == :phase
         yguide --> "deg"
         b = rad2deg.(angle.(arr))
@@ -60,7 +64,7 @@ end
         yguide --> "Im"
         b = imag.(arr)
     else
-        throw(ArgumentError("unknown ytype = $ytype, use one of :raw, :mag, :magdb, :phase, :uphase, :re, :im"))
+        throw(ArgumentError("unknown ytype = $ytype, use one of :raw, :mag, :magdb, :powdb, :phase, :uphase, :re, :im"))
     end
     dom, b
 end

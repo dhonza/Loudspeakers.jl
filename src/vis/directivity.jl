@@ -1,8 +1,8 @@
 @userplot DirectivityMap
 
 @recipe function f(h::DirectivityMap)
-    if length(h.args) != 1 || !(typeof(h.args[1]) <: DirectivitySpectra)
-        error("Directivity MAp should be given single vector. Got: $(typeof(h.args))")
+    if length(h.args) != 1 || !(typeof(h.args[1]) <: AngularMeasurements)
+        error("Directivity Map should be given single vector. Got: $(typeof(h.args))")
     end
     ds = h.args[1]
 
@@ -17,7 +17,7 @@
 
     x = domain(ds)
     y = copy(ds.angles)
-    Z = amp2db.(abs.(spectra(ds)))
+    Z = amp2db.(abs.(parent(ds))).data
 
     @series begin
         seriestype := :contour
@@ -37,7 +37,7 @@ end
 @userplot DirectivityPlot
 
 @recipe function f(h::DirectivityPlot; db=true, minclip=0)
-    if length(h.args) != 2 || !(typeof(h.args[1]) <: DirectivitySpectra) || !(typeof(h.args[2]) <: AbstractVector)
+    if length(h.args) != 2 || !(typeof(h.args[1]) <: AngularMeasurements) || !(typeof(h.args[2]) <: AbstractVector)
         error("Directivity Plot should be given two vectors. Got: $(typeof(h.args))")
     end
     ds, freqs = h.args
@@ -51,7 +51,7 @@ end
         yt == round(yt) ? round(Int64, yt) : yt
     end
 
-    amplitudes = abs.(spectra(ds))
+    amplitudes = abs.(parent(ds))
     anglesrad = deg2rad.(angles(ds))
     for f in freqs
         freqamps = reshape(slice(amplitudes, f), :)
@@ -74,7 +74,7 @@ end
 @userplot MeanDirectivityPlot
 
 @recipe function f(h::MeanDirectivityPlot; db=true, minclip=0)
-    if length(h.args) != 2 || !(typeof(h.args[1]) <: DirectivitySpectra) || !(typeof(h.args[2]) <: AbstractVector)
+    if length(h.args) != 2 || !(typeof(h.args[1]) <: AngularMeasurements) || !(typeof(h.args[2]) <: AbstractVector)
         error("Directivity Plot should be given two vectors. Got: $(typeof(h.args))")
     end
     ds, angles = h.args

@@ -14,8 +14,13 @@ using CSV
 using DSP
 using FFTW
 import FFTW: rfft, irfft
+using LinearAlgebra 
 using RecipesBase
 using IntervalSets
+using Printf
+using ProgressBars
+using StatsBase
+using WAV
 
 using Interpolations
 import Interpolations.interpolate
@@ -25,17 +30,23 @@ using Unitful
 
 using SampleArrays
 
+include("utils.jl")
+
 include("smoothing/octave.jl")
 
 include("measurements/peak.jl")
 
 include("measurements/directivity.jl")
 
+include("measurements/spinorama.jl")
+
 include("measurements/impexp.jl")
 
 include("measurements/quasianechoic.jl")
 
 include("measurements/expsweep.jl")
+
+include("measurements/measure.jl")
 
 include("vis/timedomain.jl")
 
@@ -109,15 +120,23 @@ function create_fir_filter(X::RFFTSpectrumArray, taps)
     xsa, rfft(xsa)
 end
 
-function Statistics.mean(X::AbstractSpectrumArray)
+Statistics.mean(X::AbstractSpectrumArray{<:SignalElement}) = _mean(X, uweights(Float32, nchannels(X)))
+Statistics.mean(X::AbstractSpectrumArray{<:SignalElement}, w::AbstractWeights) = _mean(X, w)
+
+function _mean(X::AbstractSpectrumArray{<:SignalElement}, w::AbstractWeights)
     # complex mean over channels according to
     # Panzer: The use of continuous phase for interpolation, smoothing and forming mean values of complex frequency response curves, 2004
     Xu = unwrap(X)
-    mags = mean(abs.(Xu), dims=2)
-    phis = mean(angle.(Xu), dims=2)
-    Y = similar(X, nfreqs(X), 1)
+    mags = mean(abs.(Xu), w, dims=2)
+    phis = mean(angle.(Xu), w, dims=2)
+    Y = similar(X, nframes(X), 1)
     Y .= (MagPhase(m, p) for (m, p) in zip(mags, phis))
     Y
 end
+
+Statistics.mean(X::AbstractSpectrumArray) = _mean(X, uweights(Float32, nchannels(X)))
+Statistics.mean(X::AbstractSpectrumArray, w::AbstractWeights) = _mean(X, w)
+
+_mean(X::AbstractSpectrumArray, w::AbstractWeights) = mean(X, w, dims=2)
 
 end # module

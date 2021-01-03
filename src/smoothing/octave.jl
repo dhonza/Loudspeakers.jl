@@ -8,7 +8,7 @@ function smooth(a::RFFTSpectrumArray{T}, octave::Real = 1//3) where {T <: Real}
     # Method 1: Symmetric weights
     # rectangular window
     octave ≥ 0 || error("octave must be ≥ 0")
-    n = nfreqs(a)
+    n = nframes(a)
     as = similar(a)
     X = data(a)
     Xs = data(as)
@@ -35,7 +35,7 @@ end
 function smooth_naive(a::RFFTSpectrumArray{T}, octave::Real = 1//3) where {T <: Real}
     # slower version of smooth - always recomputes window means
     octave ≥ 0 || error("octave must be ≥ 0")
-    n = nfreqs(a)
+    n = nframes(a)
     as = similar(a)
     X = data(a)
     Xs = data(as)
