@@ -233,7 +233,6 @@ function orbit_evaluator(spinorama::Spinorama, ::Val{:horizontal})
     [(α=α, latlon=(0, α), f=() -> parent(spinorama.hor)[:, i]) for (i, α) in enumerate(angles(spinorama.hor))], 0.0
 end
 
-
 function orbit_evaluator(spinorama::Spinorama, ::Val{:vertical})
     function vertical_latlon(α)
         # normalized latitude, longitude for the vertical orbit
@@ -289,9 +288,10 @@ function interpolate(spinorama::Spinorama, lat, lon)
     mean(hcat([o.f() for o in selpts]...), weights([dists[2], dists[1]]))
 end
 
-function transform(spinorama::Spinorama; x=0.0, y=0.0, z=0.0, r=0.0, t=0.0, ldist=2000.0, c=344.0)
+function transform_old(spinorama::Spinorama; lat=0.0, lon=0.0, ldist=2000.0, x=0.0, y=0.0, z=0.0, r=0.0, t=0.0, c=344.0)
     # meters, degrees, speed of sound in m/s
     x, y, z, ldist = tom.((x, y, z, ldist))
+    c = tomps(c)
     vec = [x+ldist, -y, -z]
     dist = norm(vec) # dist ≥ ldist    
     lat, lon = tolatlon(Ry(t) * Rz(-r) * vec)
@@ -303,9 +303,32 @@ function transform(spinorama::Spinorama; x=0.0, y=0.0, z=0.0, r=0.0, t=0.0, ldis
     return response
 end
 
+
+function transform(spinorama::Spinorama; lat=0.0, lon=0.0, ldist=2.0, x=0.0, y=0.0, z=0.0, r=0.0, t=0.0, c=344.0)
+    # meters, degrees, speed of sound in m/s
+    x, y, z, ldist = tom.((x, y, z, ldist))
+    c = tomps(c)
+    driver_center = [x, y, z]
+    # @show driver_center
+    vec = tovect(lat, lon) .* ldist
+    # @show vec
+    dvec = vec - driver_center
+    # @show dvec
+    dist = norm(dvec)
+    # @show dist
+    dratio = ldist/dist
+    lat_, lon_ = tolatlon(Ry(t) * Rz(-r) * dvec)
+    # @show lat_, lon_
+    response = interpolate(spinorama, lat_, lon_) .* dratio
+    delay_dist = (dist - ldist)
+    delay!(response, delay_dist / c)
+    names!(response, [:response])
+    return response
+end
+
 # Vituix axes: x -> z, y-> x, z -> y
-transform_vituix(spinorama::Spinorama; x=0.0, y=0.0, z=0.0, r=0.0, t=0.0, ldist=2000.0, c=344.0) = 
-    transform(spinorama; x=z, y=x, z=y, r=r, t=t, ldist=ldist, c=c)
+transform_vituix(spinorama::Spinorama; lat=0.0, lon=0.0, ldist=2.0, x=0.0, y=0.0, z=0.0, r=0.0, t=0.0, c=344.0) = 
+    transform(spinorama; lat=lat, lon=lon, ldist=ldist, x=z, y=x, z=y, r=r, t=t, c=c)
 
 
 
