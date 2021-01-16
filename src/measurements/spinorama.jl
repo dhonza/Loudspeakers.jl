@@ -1,4 +1,4 @@
-export Spinorama, results, power_response, listening_window, early_reflections, transform, transform_vituix, orbit_evaluator
+export Spinorama, evaluate, power_response, listening_window, early_reflections, transform, transform_vituix, orbit_evaluator
 
 struct Spinorama{T<:AngularSpectra}
     hor::T
@@ -11,7 +11,7 @@ struct Spinorama{T<:AngularSpectra}
     pr_front_wall
     pr_side_wall
     pr_rear_wall
-    pr_rear
+    pr_rear_wall_standard
 
     function Spinorama(hor::T, ver::T; 
         lw_hor=30,
@@ -20,8 +20,8 @@ struct Spinorama{T<:AngularSpectra}
         pr_ceiling=40..60,
         pr_front_wall=-30..30,
         pr_side_wall=[-80..(-40), 40..80],
-        pr_rear_wall=[180, -90, 90],
-        pr_rear=[-175..(-90), 90..180]
+        pr_rear_wall=[-175..(-90), 90..180],
+        pr_rear_wall_standard=[180, -90, 90],
         ) where T
         lw_hor >= 0 || error("hor < 0")
         lw_ver >= 0 || error("ver < 0")
@@ -32,7 +32,7 @@ struct Spinorama{T<:AngularSpectra}
 
         new{T}(hor, ver, step_hor, 
             lw_hor, lw_ver, 
-            pr_floor, pr_ceiling, pr_front_wall, pr_side_wall, pr_rear_wall, pr_rear)
+            pr_floor, pr_ceiling, pr_front_wall, pr_side_wall, pr_rear_wall, pr_rear_wall_standard)
     end
 end
 
@@ -52,8 +52,10 @@ function angular_step(angles)
     return step
 end
 
-function results(spinorama::Spinorama)
-    ref = parent(spinorama.hor[0.0])
+function evaluate(spinorama::Spinorama)
+    # note that spinorama results involve magnitude only
+
+    ref = abs.(parent(spinorama.hor[0.0]))
     names!(ref, [:reference])
 
     pr = power_response(spinorama)    
@@ -66,10 +68,16 @@ function results(spinorama::Spinorama)
     erdi = lw[:, :listening_window] ./ er[:, :early_reflections]
     names!(erdi, [:ERDI])
 
-    erdi_vituix = lw[:, :listening_window] ./ er[:, :early_reflections_vituix]
-    names!(erdi_vituix, [:ERDI_vituix])
+    erdi_horizontal = lw[:, :listening_window] ./ er[:, :early_reflections_horizontal]
+    names!(erdi_horizontal, [:ERDI_horizontal])
 
-    hcat(ref, pr, lw, er, spdi, erdi, erdi_vituix)
+    erdi_vertical = lw[:, :listening_window] ./ er[:, :early_reflections_vertical]
+    names!(erdi_vertical, [:ERDI_vertical])
+
+    erdi_standard = lw[:, :listening_window] ./ er[:, :early_reflections_standard]
+    names!(erdi_standard, [:ERDI_standard])
+
+    hcat(ref, pr, lw, er, spdi, erdi, erdi_horizontal, erdi_vertical, erdi_standard)
 end
 
 function power_response(spinorama::Spinorama)
@@ -129,7 +137,7 @@ function early_reflections(spinorama::Spinorama)
     front_wall_ = get_angles(spinorama.hor, spinorama.pr_front_wall)
     side_wall_ = get_angles(spinorama.hor, spinorama.pr_side_wall)
     rear_wall_ = get_angles(spinorama.hor, spinorama.pr_rear_wall)
-    rear_ = get_angles(spinorama.hor, spinorama.pr_rear)
+    rear_wall_standard_ = get_angles(spinorama.hor, spinorama.pr_rear_wall_standard)
 
     mse_mean(selection...) = mean(Float64.(abs.(hcat(selection...)).^2), dims=2)
 
@@ -144,21 +152,22 @@ function early_reflections(spinorama::Spinorama)
     front_wall_mean = mse_mean(front_wall_)
     side_wall_mean = mse_mean(side_wall_)
     rear_wall_mean = mse_mean(rear_wall_)
-    rear_mean = mse_mean(rear_)
+    rear_wall_mean_standard = mse_mean(rear_wall_standard_)
         
-    hcat(
+    er = hcat(
         sqrt_mean(:early_reflections, floor_mean, ceiling_mean, front_wall_mean, side_wall_mean, rear_wall_mean),
-        sqrt_mean(:early_reflections_vertical, floor_mean, ceiling_mean),
         sqrt_mean(:early_reflections_horizontal, front_wall_mean, side_wall_mean, rear_wall_mean),
+        sqrt_mean(:early_reflections_vertical, floor_mean, ceiling_mean),
         sqrt_mean(:early_reflections_ceiling, ceiling_mean),
         sqrt_mean(:early_reflections_floor, floor_mean),
         sqrt_mean(:early_reflections_front, front_wall_mean),
-        sqrt_mean(:early_reflections_rear_wall, rear_wall_mean),
-        sqrt_mean(:early_reflections_rear, rear_mean),
+        sqrt_mean(:early_reflections_rear, rear_wall_mean),
         sqrt_mean(:early_reflections_side, side_wall_mean),
-        sqrt_mean(:early_reflections_vituix, floor_mean, ceiling_mean, front_wall_mean, side_wall_mean, rear_mean),
-        sqrt_mean(:early_reflections_horizontal_vituix, front_wall_mean, side_wall_mean, rear_mean),
+        sqrt_mean(:early_reflections_standard, floor_mean, ceiling_mean, front_wall_mean, side_wall_mean, rear_wall_mean_standard),
+        sqrt_mean(:early_reflections_horizontal_standard, front_wall_mean, side_wall_mean, rear_wall_mean_standard),
+        sqrt_mean(:early_reflections_rear_standard, rear_wall_mean_standard),
     )
+    er
 end
 
 # see http://www.movable-type.co.uk/scripts/latlong-vectors.html
@@ -262,6 +271,9 @@ function orbit_evaluator(spinorama::Spinorama, lat, lon)
     
     hidx(i) = -90 < b < 90 ? i : (i < npts ? npts - i : npts)
     vidx(i) = β < 0 ? (i < npts ? npts - i : npts) : i
+
+    # hidx(i) = i
+    # vidx(i) = (i < npts ? npts - i : npts)
     
     orbit = [(α=α, latlon=tolatlon(Rx(β) * tovect(0, α)),
             f=() -> mean(
@@ -283,26 +295,21 @@ function interpolation_orbit_evaluator(spinorama::Spinorama, lat, lon)
 end
 
 function interpolate(spinorama::Spinorama, lat, lon)
+    # TODO: don't have to construct whole orbit to find its two closest points
     orbit_eval, β = interpolation_orbit_evaluator(spinorama, lat, lon)
+    # @show β
     selpts, dists = sort_closest_points(orbit_eval, lat, lon, 2)
-    mean(hcat([o.f() for o in selpts]...), weights([dists[2], dists[1]]))
-end
+    for pt in selpts
+        # @show pt.α, pt.latlon
+    end
+    pts = hcat([o.f() for o in selpts]...)
+    # pts = selpts[1].f()
+    # pts = selpts[1].f()
+    # return pts
 
-function transform_old(spinorama::Spinorama; lat=0.0, lon=0.0, ldist=2000.0, x=0.0, y=0.0, z=0.0, r=0.0, t=0.0, c=344.0)
-    # meters, degrees, speed of sound in m/s
-    x, y, z, ldist = tom.((x, y, z, ldist))
-    c = tomps(c)
-    vec = [x+ldist, -y, -z]
-    dist = norm(vec) # dist ≥ ldist    
-    lat, lon = tolatlon(Ry(t) * Rz(-r) * vec)
-    dratio = ldist/dist
-    response = interpolate(spinorama, lat, lon) .* dratio
-    delay_dist = (dist - ldist)
-    delay!(response, delay_dist / c)
-    names!(response, [:response])
-    return response
+    mean(pts, weights([dists[2], dists[1]]))
+    # rms_mean(pts, weights([dists[2], dists[1]]))
 end
-
 
 function transform(spinorama::Spinorama; lat=0.0, lon=0.0, ldist=2.0, x=0.0, y=0.0, z=0.0, r=0.0, t=0.0, c=344.0)
     # meters, degrees, speed of sound in m/s
@@ -310,17 +317,28 @@ function transform(spinorama::Spinorama; lat=0.0, lon=0.0, ldist=2.0, x=0.0, y=0
     c = tomps(c)
     driver_center = [x, y, z]
     # @show driver_center
-    vec = tovect(lat, lon) .* ldist
-    # @show vec
-    dvec = vec - driver_center
-    # @show dvec
-    dist = norm(dvec)
-    # @show dist
-    dratio = ldist/dist
-    lat_, lon_ = tolatlon(Ry(t) * Rz(-r) * dvec)
+
+    target = tovect(lat, lon) .* ldist
+    tvec = target - driver_center
+    # @show tvec, norm(tvec)
+
+    # driver_trans = Ry(t) * Rz(-r)
+    # driver_invtrans = Rz(-r) * Ry(t)
+    driver_invtrans = Ry(t) * Rz(-r) # OK
+
+    tvec_invtrans = driver_invtrans * tvec
+    # @show tvec_invtrans, norm(tvec_invtrans)
+
+    lat_, lon_ = tolatlon(tvec_invtrans)
     # @show lat_, lon_
+
+    tdist = norm(tvec)
+    dratio = ldist/tdist
+    # @show dratio
+
     response = interpolate(spinorama, lat_, lon_) .* dratio
-    delay_dist = (dist - ldist)
+    delay_dist = (tdist - ldist)
+    # @show delay_dist/c
     delay!(response, delay_dist / c)
     names!(response, [:response])
     return response
@@ -328,8 +346,4 @@ end
 
 # Vituix axes: x -> z, y-> x, z -> y
 transform_vituix(spinorama::Spinorama; lat=0.0, lon=0.0, ldist=2.0, x=0.0, y=0.0, z=0.0, r=0.0, t=0.0, c=344.0) = 
-    transform(spinorama; lat=lat, lon=lon, ldist=ldist, x=z, y=x, z=y, r=r, t=t, c=c)
-
-
-
-
+    transform(spinorama; lat=lat, lon=lon, ldist=ldist, x=-z, y=x, z=y, r=r, t=t, c=c)

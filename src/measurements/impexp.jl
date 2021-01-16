@@ -1,4 +1,4 @@
-export miccalibrate, miccalibrate!, load_angular_measurements
+export miccalibrate, miccalibrate!, load_angular_measurements, load_vituix_spinorama_curves
 
 function miccalibrate!(a::AbstractSpectrumArray, calfile; skipto=0)
     # df = CSV.read(calfile, DataFrame; header=false, skipto=skipto)
@@ -13,18 +13,18 @@ miccalibrate(a::AbstractSpectrumArray, calfile; skipto=0) = miccalibrate!(deepco
 """
     load_directivity_spectra(rootdir, dirtemplate, loader, select=:all)
 
-Load all directivity spectra in `irdir` with each spectrum in a separate IR file/directory matching regex `ir_template`. 
+Load all directivity spectra in `irdir` with each spectrum in a separate IR file/directory matching regex `template`. 
 
 Use `loader(f)` function to get the a subtype of the `AbstractSpectrumArray`. Imported spectra can be limited to only `:positive` or `:negative` angles using `select`. 
 Degrees are infered as to be the first group of `ir_template`. Example: `r"ir_(\\d\\d\\d).wav"`.
 """
-function load_angular_measurements(irdir, ir_template, loader, select=:all)
+function load_angular_measurements(irdir, template, loader, select=:all)
     @assert select ∈ [:all, :positive, :negative]
     spectra = []
     angles = Float64[]
     for f in readdir(irdir)
         fpath = joinpath(irdir, f)
-        m = match(ir_template, f)
+        m = match(template, f)
         if !isnothing(m)
             angle = normdeg(parse(Float64, m.captures[1]))
             if select == :positive && angle < 0
@@ -39,7 +39,32 @@ function load_angular_measurements(irdir, ir_template, loader, select=:all)
             push!(angles, angle)
         end
     end
-    length(spectra) > 0 || error("now file imported!")
+    length(spectra) > 0 || error("no file imported!")
     catspectra = hcat(spectra...)
     AngularMeasurements(catspectra, angles)
+end
+
+function load_vituix_spinorama_curves(rootdir; samplerate=44100*Unitful.Hz)
+    function load(file_name, channel_name)
+        readfrd(joinpath(rootdir, file_name), samplerate, magf=db2amp, name=channel_name) .|> abs
+    end
+    pairs = [
+        "VituixCAD_CTA-2034-A Directivity Index.frd" => :SPDI,
+        "VituixCAD_CTA-2034-A ER Ceiling.frd" => :early_reflections_ceiling,
+        "VituixCAD_CTA-2034-A ER Floor.frd" => :early_reflections_floor,
+        "VituixCAD_CTA-2034-A ER Front.frd" => :early_reflections_front,
+        "VituixCAD_CTA-2034-A ER Horizontal.frd" => :early_reflections_horizontal,
+        "VituixCAD_CTA-2034-A ER Rear.frd" => :early_reflections_rear,
+        "VituixCAD_CTA-2034-A ER Side.frd" => :early_reflections_side,
+        "VituixCAD_CTA-2034-A ER Total.frd" => :early_reflections,
+        "VituixCAD_CTA-2034-A ER Vertical.frd" => :early_reflections_vertical,
+        "VituixCAD_CTA-2034-A ERDI Horizontal.frd" => :ERDI_horizontal,
+        "VituixCAD_CTA-2034-A ERDI Total.frd" => :ERDI,
+        "VituixCAD_CTA-2034-A ERDI Vertical.frd" => :ERDI_vertical,
+        "VituixCAD_CTA-2034-A In-room response.frd" => :in_room,
+        "VituixCAD_CTA-2034-A Listening window.frd" => :listening_window,
+        "VituixCAD_CTA-2034-A Power response.frd" => :power_response,
+        "VituixCAD_CTA-2034-A Reference angle.frd" => :reference,
+    ]
+    hcat(map(p -> load(p...), pairs)...)
 end
