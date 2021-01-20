@@ -24,6 +24,7 @@ using WAV
 
 using Interpolations
 import Interpolations.interpolate
+export interpolate
 
 using FileIO: load, save, loadstreaming, savestreaming
 using Unitful

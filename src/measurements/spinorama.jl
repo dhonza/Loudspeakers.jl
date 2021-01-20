@@ -1,4 +1,4 @@
-export Spinorama, evaluate, power_response, listening_window, early_reflections, transform, transform_vituix, orbit_evaluator
+export Spinorama, evaluate, power_response, listening_window, early_reflections, project, project_vituix, orbit_evaluator, normlat
 
 struct Spinorama{T<:AngularSpectra}
     hor::T
@@ -34,6 +34,21 @@ struct Spinorama{T<:AngularSpectra}
             lw_hor, lw_ver, 
             pr_floor, pr_ceiling, pr_front_wall, pr_side_wall, pr_rear_wall, pr_rear_wall_standard)
     end
+end
+
+function Interpolations.interpolate(spinorama::Spinorama, template::T) where {U, T <: AbstractSampleArray{U}}
+    Spinorama(
+        interpolate(spinorama.hor, template),
+        interpolate(spinorama.ver, template);
+        lw_hor=spinorama.lw_hor,
+        lw_ver=spinorama.lw_ver,
+        pr_floor=spinorama.pr_floor,
+        pr_ceiling=spinorama.pr_ceiling,
+        pr_front_wall=spinorama.pr_front_wall,
+        pr_side_wall=spinorama.pr_side_wall,
+        pr_rear_wall=spinorama.pr_rear_wall,
+        pr_rear_wall_standard=spinorama.pr_rear_wall_standard,
+    ) 
 end
 
 function angular_step(angles)
@@ -242,15 +257,15 @@ function orbit_evaluator(spinorama::Spinorama, ::Val{:horizontal})
     [(α=α, latlon=(0, α), f=() -> parent(spinorama.hor)[:, i]) for (i, α) in enumerate(angles(spinorama.hor))], 0.0
 end
 
+function normlat(α)
+    # normalized latitude, longitude for the vertical orbit
+    @assert -180 < α && α <= 180
+    α > 90 && return 180 - α, 180
+    α < -90 && return -180 - α, 180
+    return α, 0
+end
 function orbit_evaluator(spinorama::Spinorama, ::Val{:vertical})
-    function vertical_latlon(α)
-        # normalized latitude, longitude for the vertical orbit
-        @assert -180 < α && α <= 180
-        α > 90 && return 180 - α, 180
-        α < -90 && return -180 - α, 180
-        return α, 0
-    end
-    [(α=α, latlon=vertical_latlon(α), f=() -> parent(spinorama.ver)[:, i]) for (i, α) in enumerate(angles(spinorama.ver))], 0.0
+    [(α=α, latlon=normlat(α), f=() -> parent(spinorama.ver)[:, i]) for (i, α) in enumerate(angles(spinorama.ver))], 0.0
 end
 
 function orbit_evaluator(spinorama::Spinorama, lat, lon)
@@ -294,14 +309,11 @@ function interpolation_orbit_evaluator(spinorama::Spinorama, lat, lon)
     return orbit_evaluator(spinorama, lat, lon)
 end
 
-function interpolate(spinorama::Spinorama, lat, lon)
+function project(spinorama::Spinorama, lat, lon)
     # TODO: don't have to construct whole orbit to find its two closest points
     orbit_eval, β = interpolation_orbit_evaluator(spinorama, lat, lon)
     # @show β
     selpts, dists = sort_closest_points(orbit_eval, lat, lon, 2)
-    for pt in selpts
-        # @show pt.α, pt.latlon
-    end
     pts = hcat([o.f() for o in selpts]...)
     # pts = selpts[1].f()
     # pts = selpts[1].f()
@@ -311,7 +323,7 @@ function interpolate(spinorama::Spinorama, lat, lon)
     # rms_mean(pts, weights([dists[2], dists[1]]))
 end
 
-function transform(spinorama::Spinorama; lat=0.0, lon=0.0, ldist=2.0, x=0.0, y=0.0, z=0.0, r=0.0, t=0.0, c=344.0)
+function project(spinorama::Spinorama; lat=0.0, lon=0.0, ldist=2.0, H=nothing, x=0.0, y=0.0, z=0.0, r=0.0, t=0.0, c=344.0)
     # meters, degrees, speed of sound in m/s
     x, y, z, ldist = tom.((x, y, z, ldist))
     c = tomps(c)
@@ -336,14 +348,33 @@ function transform(spinorama::Spinorama; lat=0.0, lon=0.0, ldist=2.0, x=0.0, y=0
     dratio = ldist/tdist
     # @show dratio
 
-    response = interpolate(spinorama, lat_, lon_) .* dratio
+    response = project(spinorama, lat_, lon_) .* dratio
     delay_dist = (tdist - ldist)
     # @show delay_dist/c
     delay!(response, delay_dist / c)
     names!(response, [:response])
-    return response
+    
+    if isnothing(H)
+        return response
+    else
+        return H .* response
+    end
 end
 
 # Vituix axes: x -> z, y-> x, z -> y
-transform_vituix(spinorama::Spinorama; lat=0.0, lon=0.0, ldist=2.0, x=0.0, y=0.0, z=0.0, r=0.0, t=0.0, c=344.0) = 
-    transform(spinorama; lat=lat, lon=lon, ldist=ldist, x=-z, y=x, z=y, r=r, t=t, c=c)
+function project_vituix(spinorama::Spinorama; lat=0.0, lon=0.0, ldist=2.0, H=nothing, x=0.0, y=0.0, z=0.0, r=0.0, t=0.0, c=344.0)
+    project(spinorama; lat=lat, lon=lon, ldist=ldist, H=H, x=-z, y=x, z=y, r=r, t=t, c=c)
+end
+
+# for now
+const DriverDefinition = Dict{Symbol, Any}
+
+function project(drivers::DriverDefinition...; lat=0.0, lon=0.0, ldist=2.0)
+    Y = [project_vituix(d[:spinorama]; lat=lat, lon=lon, ldist=ldist, d[:transform]...) for d in drivers]
+    sum(hcat(Y...); dims=2)
+end
+
+function project_vituix(drivers::DriverDefinition...; lat=0.0, lon=0.0, ldist=2.0)
+    Y = [project_vituix(d[:spinorama]; lat=lat, lon=lon, ldist=ldist, d[:transform]...) for d in drivers]
+    sum(hcat(Y...); dims=2)
+end

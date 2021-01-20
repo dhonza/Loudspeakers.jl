@@ -1,5 +1,5 @@
 export AngularMeasurements, AngularSpectra, parent, angles, angleidx, closest_angle, between_indices
-
+import Base.parent
 # export maximumamp, minimumamp, normalizeamp, normalizeamp!
 # export normalizeampangle, normalizeampangle!
 # export normalizeampfreq, normalizeampfreq!
@@ -22,7 +22,11 @@ end
 
 const AngularSpectra{T,P<:AbstractSpectrumArray{T},A<:AbstractVector{<:Real}} = AngularMeasurements{T,P,A}
 
-parent(am::AngularMeasurements) = am.parent
+function Interpolations.interpolate(am::AngularMeasurements, template::T) where {U, T <: AbstractSampleArray{U}}
+    AngularMeasurements(Interpolations.interpolate(parent(am), template), angles(am))    
+end
+
+Base.parent(am::AngularMeasurements) = am.parent
 angles(am::AngularMeasurements) = am.angles
 
 SampleArrays.rate(am::AngularMeasurements) = rate(parent(am))

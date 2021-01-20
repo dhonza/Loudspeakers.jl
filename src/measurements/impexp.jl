@@ -1,4 +1,4 @@
-export miccalibrate, miccalibrate!, load_angular_measurements, load_vituix_spinorama_curves
+export miccalibrate, miccalibrate!, load_angular_measurements, load_vituix_spinorama_curves, load_spinorama_from_FRDs, load_vituix_FIRs
 
 function miccalibrate!(a::AbstractSpectrumArray, calfile; skipto=0)
     # df = CSV.read(calfile, DataFrame; header=false, skipto=skipto)
@@ -67,4 +67,24 @@ function load_vituix_spinorama_curves(rootdir; samplerate=44100*Unitful.Hz)
         "VituixCAD_CTA-2034-A Reference angle.frd" => :reference,
     ]
     hcat(map(p -> load(p...), pairs)...)
+end
+
+function load_spinorama_from_FRDs(rootdir; 
+    template_hor=Regex(raw"VituixCAD_PolarFR hor (.*)\.frd"), template_ver=Regex(raw"VituixCAD_PolarFR ver (.*)\.frd"), samplerate=44100*Unitful.Hz)
+    loader = f->readfrd(f, samplerate, magf=db2amp)
+    hor = load_angular_measurements(rootdir, template_hor, loader, :all)
+    ver = load_angular_measurements(rootdir, template_ver, loader, :all)
+    return Spinorama(hor, ver)
+end
+
+function load_vituix_FIRs(wavs...; Δt=0.0, names=nothing)
+    if !isnothing(names) && length(wavs) != length(names)
+        throw(ArgumentError("the number of WAV files does not match the number of names!"))
+    end
+    names_ = isnothing(names) ? [Symbol("FIR_$i") for i in 1:length(wavs)] : names
+    Hs = hcat((readwav_rfft(wav)[2] for wav in wavs)...)
+    names!(Hs, names_)
+    Hmax = maximum(abs.(Hs))
+    Δt ≈ 0.0 || delay!(Hs, Δt)
+    return Hs ./ Hmax
 end
